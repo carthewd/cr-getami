@@ -1,0 +1,62 @@
+Parameters:
+  OSVersion:
+    Default: amzn2
+    AllowedValues: [rhel, ubuntu, sles, windows, windows2016, windows2019, amzn, amzn2, ecs, ecs-arm64, ecs-gpu, ecs-amzn]
+    Type: String
+    Description: Enter the OS/AMI you'd like to use for this instance 
+
+Resources: 
+  MyEC2Instance:
+    DependsOn: [ GetAmiLambda ] 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !GetAtt GetAmi.AmiId
+
+  GetAmiLambda:
+    DependsOn: [ GetAmiLambdaExecutionRole ]
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: "carthewd"
+        S3Key: "scripts/lambda_getami.zip"
+      Handler: !Sub "getami.handler"
+      Runtime: python3.6
+      Timeout: 300
+      Role: !GetAtt GetAmiLambdaExecutionRole.Arn
+
+  GetAmi:
+    Type: Custom::GetAmi
+    Properties:
+      ServiceToken: !GetAtt GetAmiLambda.Arn
+      OS: !Ref "OSVersion"
+      # log level
+      loglevel: debug
+
+  GetAmiLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action:
+            - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeImages
+                  - ssm:GetParameter
+                Resource: "*"
+              - Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
